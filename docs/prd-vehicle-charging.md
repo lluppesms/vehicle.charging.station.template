@@ -120,17 +120,19 @@ Placeholder tabs should show clear text that the feature is planned for a future
 | FR-004 | On selection, the car shall animate from roadway to an available charging slot. | Must | Visual path should be smooth and obvious |
 | FR-005 | The simulator shall start charging automatically when the car reaches the slot. | Must | Charging session enters active state |
 | FR-006 | The UI shall show battery percentage for charging vehicles and animate incrementing charge level. | Must | Numeric and visual fill indicator |
-| FR-007 | A charging session shall complete in approximately 60 seconds by default. | Must | Configurable duration for testing |
+| FR-007 | Charging duration shall be computed from battery delta, vehicle capacity, and slot charging power, but should complete in approximately 60 seconds at most. | Must | `durationSeconds = clamp(((batteryTargetPercent - batteryStartPercent) / 100 * estimatedCapacityKWh) / chargingPowerKw * 3600, 30, 90)`; expected default behavior remains near 60 seconds |
 | FR-008 | On completion, the charged car shall animate from slot back to roadway traffic. | Must | Reentry should not overlap with active bay occupancy |
 | FR-009 | The simulator shall compute and display total energy dispensed across all completed sessions. | Must | Counter should be persistent during page session |
 | FR-010 | The total energy counter shall update immediately after each session completes. | Must | Unit displayed in kWh |
-| FR-011 | If all slots are occupied, selection behavior shall follow a defined policy. | Should | Default policy: ignore click and show non-blocking status |
+| FR-011 | If all slots are occupied, click requests for roadway cars shall be placed into a queue. | Should | Show queue of cars below chargers and then remove 1 by 1 in FIFO order |
 | FR-012 | The UI shall display active slot status including car identity, current battery percentage, and estimated time remaining. | Should | Improves observability |
-| FR-013 | Users shall be able to reset the simulation state from the UI. | Should | Resets counters, slots, and active traffic state |
+| FR-013 | Users shall be able to reset the simulation state from the UI with atomic behavior. | Must | On reset: clear active sessions, release all slots, return all cars to roadway spawn flow, and zero session-scoped metrics in one simulation tick |
 | FR-014 | The application shall support responsive layouts for desktop and mobile. | Must | No clipped critical controls or unreadable data |
 | FR-015 | The application shall provide tabs for Dashboard, Cars, Stations, Simulation, and Settings. | Must | Dashboard is initial MVP focus |
 | FR-016 | The Dashboard tab shall contain the full MVP charging simulation experience. | Must | Includes roadway motion, click-to-charge, battery progression, and total energy counter |
 | FR-017 | Cars, Stations, Simulation, and Settings tabs shall be functional placeholders in MVP. | Must | Each tab must render placeholder text indicating future-stage implementation |
+| FR-018 | Charge-request input shall be idempotent per vehicle while the vehicle is not in roadway state. | Must | Multiple rapid clicks or key activations on the same car must result in at most one active assignment |
+| FR-019 | The simulator shall provide keyboard-operable selection of roadway cars. | Must | Cars are focusable, expose accessible labels, and support Enter/Space to request charging |
 
 ## Non-Functional Requirements
 
@@ -194,17 +196,33 @@ Implement as a client-first web application that keeps simulation state in brows
 * Metrics module for cumulative totals and derived dashboard values
 * Optional local API shim only if workshop scenarios require externalized state
 
+### Charging and Capacity Policy (MVP)
+
+* Session duration is derived from energy need and slot power using FR-007 formula.
+* Total energy dispensed is maintained in memory only for the current page runtime and is not persisted across refresh.
+* Reset behavior is atomic and authoritative; in-flight sessions are discarded and do not contribute additional energy after reset.
+
 ### Key State Transitions
 
 ```text
 ROADWAY
-  -> (click vehicle)
+  -> (click or keyboard select with slot available)
 ENTERING_SLOT
   -> (vehicle reaches slot)
 CHARGING
   -> (session duration reached or battery target met)
 EXITING_SLOT
   -> (vehicle reaches roadway)
+ROADWAY
+ROADWAY
+  -> (click or keyboard select with all slots occupied)
+REQUEST_REJECTED
+  -> (status message displayed; no state mutation)
+ROADWAY
+ANY_STATE
+  -> (reset)
+RESETTING
+  -> (one tick cleanup complete)
 ROADWAY
 ```
 
@@ -216,9 +234,13 @@ ROADWAY
 * AC-004: Given a charging session reaches its completion condition, when session ends, then the car exits the slot and rejoins roadway traffic.
 * AC-005: Given one or more completed sessions, when each session completes, then the total energy dispensed counter increments by that session energy.
 * AC-006: Given all slots are occupied, when the user clicks a roadway car, then the UI follows the defined full-capacity behavior and communicates status.
-* AC-007: Given a mobile viewport, when the page is rendered, then critical charging and energy metrics remain visible and readable.
+* AC-007: Given a mobile viewport (360px width), when the page is rendered, then the following remain visible without horizontal scroll: total energy dispensed, active session count, and at least one slot status card.
 * AC-008: Given the user opens Cars, Stations, Simulation, or Settings in the MVP, when the tab loads, then placeholder text is shown indicating that feature is planned for a future stage.
 * AC-009: Given the user opens Dashboard in the MVP, when the tab loads, then the full charging simulation is available.
+* AC-010: Given keyboard-only input, when a focused roadway car receives Enter or Space, then it triggers the same charge-request flow as pointer click.
+* AC-011: Given repeated rapid activation on the same roadway car, when activation occurs within 300 ms, then only one slot assignment is created.
+* AC-012: Given active entering, charging, and exiting cars, when reset is invoked, then all sessions and slot occupancy clear atomically within one simulation tick and no orphaned state remains.
+* AC-013: Given the user refreshes the page, when the simulator reinitializes, then total energy dispensed resets to zero for the new runtime session.
 
 ## Testing Strategy
 
@@ -226,15 +248,21 @@ ROADWAY
   * Vehicle state transition rules
   * Charging progression math
   * Energy accumulation logic
+  * Duration formula and clamp boundaries for FR-007
+  * Idempotent request handling for FR-018
+  * Reset atomic cleanup behavior for FR-013
 * Integration tests:
   * Click-to-slot assignment workflow
   * Full session lifecycle (enter, charge, exit, metric update)
+  * Keyboard selection parity with click behavior (FR-019, AC-010)
 * Manual validation:
   1. Start the app.
   2. Click at least three roadway vehicles across different times.
   3. Confirm each selected vehicle enters a slot and charges.
   4. Confirm completed vehicles rejoin traffic.
   5. Confirm total energy counter increases after each completed session.
+  6. Trigger reset during an active charging cycle and confirm all state is cleared immediately.
+  7. Refresh the browser and confirm metrics begin from a clean session.
 
 ## Risks and Mitigations
 
@@ -244,8 +272,8 @@ ROADWAY
 | State desynchronization between animation and logic | High | Medium | Drive animation from single source of truth state machine |
 | Performance drops on low-end devices | Medium | Medium | Cap active animated entities and simplify effects on smaller screens |
 
-## Open Questions
+## Resolved MVP Decisions
 
-* Should cars queue when slots are full, or should clicks be rejected while full?
-* Should charging duration be fixed for all vehicles or based on battery delta and power?
-* Should total energy dispensed persist across page refresh using local storage?
+* Charging duration model: computed from battery delta, capacity, and slot power (FR-007 formula).
+* Persistence scope: no cross-refresh persistence for metrics in MVP.
+* Reset semantics: atomic reset that clears in-flight state and metrics in one tick.
