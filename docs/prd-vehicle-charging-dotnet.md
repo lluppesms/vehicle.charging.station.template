@@ -10,7 +10,10 @@ keywords:
   - product requirements
   - web application
   - animation
-estimated_reading_time: 14
+  - blazor
+  - aspire
+  - dotnet
+estimated_reading_time: 16
 ---
 
 ## Document Control
@@ -25,7 +28,7 @@ estimated_reading_time: 14
 
 ## Summary
 
-Build a fun, modern web application that simulates an electric vehicle charging station. Cars are created at regular intervals and move slowly along a roadway at the bottom of the page. When a user clicks a moving car, the selected car drives into an available charging bay, begins charging, and shows a live battery fill animation. After approximately one minute of simulated charging, the vehicle returns to the roadway. The experience includes a prominent cumulative counter for total energy dispensed across all completed charging sessions.
+Build a fun, modern electric vehicle charging station simulator using a .NET 10 C# backend API and a real-time Blazor WebAssembly dashboard. Cars are created at regular intervals and move slowly along a roadway at the bottom of the page. When a user clicks a moving car, the selected car drives into an available charging bay, begins charging, and shows a live battery fill animation. After approximately one minute of simulated charging, the vehicle returns to the roadway. The experience includes a prominent cumulative counter for total energy dispensed across all completed charging sessions. The project runs within an Azure Aspire orchestration environment and serves as a hands-on workshop starter that teaches modular C# design, state management, async SignalR communication, and Blazor WebAssembly component development.
 
 ## Visual Direction
 
@@ -143,6 +146,7 @@ Placeholder tabs should show clear text that the feature is planned for a future
 | NFR-003 | Reliability | Session state transitions must be deterministic and recoverable on reset. | No stuck vehicles or orphaned slots after reset |
 | NFR-004 | Accessibility | Interactive vehicles and controls must be keyboard accessible and screen-reader labeled. | Meets WCAG AA intent for core flows |
 | NFR-005 | Maintainability | Simulation logic and rendering logic should be separated into clear modules. | Facilitates workshop extensions |
+| NFR-006 | Portability | Runs on .NET 10.0+ with no OS-specific dependencies. | Windows, macOS, Linux |
 
 ## User Experience Requirements
 
@@ -184,17 +188,45 @@ The simulator should maintain in-memory entities similar to:
   * completedSessionCount
   * activeSessionCount
 
+## API and Integration Requirements
+
+* `GET /` — Serves the Blazor WebAssembly application.
+* `GET /api/state` — Returns a full simulation snapshot (JSON).
+* `POST /api/vehicles/select` — Selects a roadway vehicle for charging (`{ vehicleId }`). Returns 201 on success, 400 on invalid input, 409 if vehicle is not in roadway state.
+* `POST /api/control` — Sets simulation pause state (`{ paused: bool }`).
+* `POST /api/reset` — Resets all simulation state atomically within one tick. Returns the fresh snapshot.
+* `SignalR Hub /simulationhub` — Streams simulation snapshot updates each tick. Blazor components subscribe via `HubConnection` for real-time updates.
+* Static Blazor WASM assets served automatically by the API project.
+* Configuration: `SpawnInterval`, `RoadwaySpeed`, `ChargingPowerKw`, and `TickInterval` are injected via `IOptions<SimulationSettings>` or constructor parameters on `SimulationEngine`.
+* No external services or databases are required.
+
 ## Technical Approach
 
-Implement as a client-first web application that keeps simulation state in browser memory.
+Implement as a full-stack .NET 10 application using Blazor WebAssembly for the UI, ASP.NET Core for the API backend, SignalR for real-time state streaming, and Azure Aspire for orchestration. Simulation state lives in memory inside a single `SimulationEngine` instance protected by async locks in C#. Keep simulation logic in the `ChargingSimulation` project, API logic in the `ChargingApi` project, Blazor UI in the `ChargingUI` project, tests in the `ChargingTests` project, and Aspire orchestration in the `ChargingAppHost` project.
 
-### Suggested Architecture
+### Project Structure
 
-* Rendering and animation layer for roadway, station, and vehicle movement
-* State engine for vehicle lifecycle transitions and timing
-* Charging computation module for battery and kWh progression
-* Metrics module for cumulative totals and derived dashboard values
-* Optional local API shim only if workshop scenarios require externalized state
+| Project | Purpose | Path |
+| --- | --- | --- |
+| ChargingSimulation | Domain models, simulation engine, vehicle lifecycle, charging logic | ChargingSimulation/ |
+| ChargingApi | ASP.NET Core API, SignalR hub, dependency injection | ChargingApi/ |
+| ChargingUI | Blazor WebAssembly dashboard, components, CSS animations | ChargingUI/ |
+| ChargingTests | xUnit test suite for simulation and API logic | ChargingTests/ |
+| ChargingAppHost | Azure Aspire AppHost orchestration | ChargingAppHost/ |
+
+### Proposed Components
+
+| Component | Responsibility | File |
+| --- | --- | --- |
+| Vehicle | Domain object with id, battery state, lifecycle state, roadway position | ChargingSimulation/Models/Vehicle.cs |
+| ChargingSlot | Slot occupancy, power output, session timing | ChargingSimulation/Models/ChargingSlot.cs |
+| Session | Active and completed session record, energy dispensed | ChargingSimulation/Models/Session.cs |
+| SimulationMetrics | Cumulative totals, derived dashboard values | ChargingSimulation/Models/SimulationMetrics.cs |
+| SimulationEngine | Tick loop, vehicle spawn, lifecycle transitions, slot assignment, publish | ChargingSimulation/Services/SimulationEngine.cs |
+| ChargingCalculator | FR-007 duration formula, kWh energy computation | ChargingSimulation/Services/ChargingCalculator.cs |
+| API Server | REST routes, input validation, SignalR hub, DI registration | ChargingApi/Program.cs, ChargingApi/Hubs/SimulationHub.cs |
+| Dashboard UI | Blazor components for roadway, station bays, battery indicators, metrics | ChargingUI/Components/ |
+| Tests | xUnit suite for state transitions, charging math, accumulation, reset | ChargingTests/ |
 
 ### Charging and Capacity Policy (MVP)
 
@@ -256,7 +288,15 @@ ROADWAY
   * Full session lifecycle (enter, charge, exit, metric update)
   * Keyboard selection parity with click behavior (FR-019, AC-010)
 * Manual validation:
-  1. Start the app.
+
+  ```text
+  dotnet restore
+  dotnet build
+  dotnet test ChargingTests/ --verbosity normal
+  aspire run
+  ```
+
+  1. Start the app using `aspire run`.
   2. Click at least three roadway vehicles across different times.
   3. Confirm each selected vehicle enters a slot and charges.
   4. Confirm completed vehicles rejoin traffic.
@@ -277,3 +317,21 @@ ROADWAY
 * Charging duration model: computed from battery delta, capacity, and slot power (FR-007 formula).
 * Persistence scope: no cross-refresh persistence for metrics in MVP.
 * Reset semantics: atomic reset that clears in-flight state and metrics in one tick.
+
+## Dependencies
+
+* Internal: `ChargingSimulation`, `ChargingApi`, `ChargingUI`, `ChargingTests`, `ChargingAppHost`.
+* External packages: `Aspire.Hosting >=9.0`, `Aspire.Hosting.AppHost >=9.0`, `Microsoft.AspNetCore.Components.WebAssembly >=10.0`, `Microsoft.AspNetCore.SignalR.Client >=10.0`.
+* Dev tooling: .NET SDK 10.0+, Aspire CLI, xUnit.
+
+## Implementation Plan
+
+1. Scaffold .NET project structure using Aspire templates (`dotnet new aspire`).
+2. Implement `Vehicle`, `ChargingSlot`, `Session`, and `SimulationMetrics` domain objects as C# classes.
+3. Implement `ChargingCalculator` with the FR-007 duration formula and kWh energy computation.
+4. Implement `SimulationEngine` with async tick loop, vehicle spawn, lifecycle transitions, slot assignment, and SignalR publish using `BackgroundService`.
+5. Implement ASP.NET Core API with REST endpoints and SignalR hub at `/simulationhub`.
+6. Build Blazor WebAssembly dashboard with components for roadway animation, charging station bays, battery fill indicators, and cumulative metrics panel.
+7. Wire the Blazor dashboard to `SimulationHub` via `HubConnection` for real-time state updates each tick.
+8. Write xUnit test suite covering vehicle state transitions, charging math, energy accumulation, idempotent request handling, and atomic reset behavior.
+9. Validate: `dotnet build`, `dotnet test`, manual browser check, and `aspire run`.
