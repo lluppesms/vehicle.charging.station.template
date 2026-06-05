@@ -151,6 +151,43 @@ After the project board is set up and the graphical mockups are ready, please as
 Once I've approved the UI designs and the project board, please begin implementation. As you work through the implementation, please provide me with regular updates on your progress and any challenges you encounter. After each sprint, please provide me with a demo of the completed work and store that sprint summary info in the docs folder. Continue this process until the MVP is complete and ready for release.
 ```
 
+## Running the Application
+
+Once the project has been scaffolded, use the following steps to build and run it locally.
+
+### Prerequisites
+
+* [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
+* [Aspire CLI](https://learn.microsoft.com/dotnet/aspire/fundamentals/setup-tooling) (`dotnet workload install aspire`)
+
+### Steps
+
+1. Restore dependencies:
+
+   ```bash
+   dotnet restore
+   ```
+
+2. Build the solution:
+
+   ```bash
+   dotnet build
+   ```
+
+3. Run the tests:
+
+   ```bash
+   dotnet test ChargingTests/ --verbosity normal
+   ```
+
+4. Start the application via Aspire:
+
+   ```bash
+   aspire run
+   ```
+
+5. Open the Aspire dashboard URL printed in the console (typically `http://localhost:18888`) and then open the application URL to view the simulator.
+
 ## Contributing
 
 * Keep PRDs in docs/ using the pattern prd-*.md.
