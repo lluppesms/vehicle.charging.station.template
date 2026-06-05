@@ -25,7 +25,7 @@ estimated_reading_time: 14
 
 ## Summary
 
-Build a fun, modern web application that simulates an electric vehicle charging station. Cars are created at regular intervals and move slowly along a roadway at the bottom of the page. When a user clicks a moving car, the selected car drives into an available charging bay, begins charging, and shows a live battery fill animation. After approximately one minute of simulated charging, the vehicle returns to the roadway. The experience includes a prominent cumulative counter for total energy dispensed across all completed charging sessions.
+Build a fun, modern web application that simulates an electric vehicle charging station. Cars are created at regular intervals and move slowly along a roadway at the bottom of the page. When a user clicks a moving car, the selected car drives into an available charging bay, begins charging, and shows a live battery fill animation. Charging time should vary based on the car's battery level when it enters the bay, rather than using a single fixed duration. The experience includes a prominent cumulative counter for total energy dispensed across all completed charging sessions.
 
 ## Visual Direction
 
@@ -46,7 +46,8 @@ The simulator concept for this assignment should be car-centric. Cars should be 
 * Provide a single-page simulator where cars are generated at regular intervals, move slowly across the roadway, and can be selected for charging
 * Animate a selected vehicle moving from roadway to station bay and then back to roadway on completion
 * Display battery charge progression in real time while a vehicle is in a charging bay
-* Track and display cumulative energy dispensed across all completed sessions
+* Use variable session timing so cars with different starting charge levels complete at different rates
+* Use realistic but demo-friendly defaults so the simulation is visually engaging and easy to present
 * Deliver a modern and visually interesting design inspired by the provided reference image
 
 ## MVP Scope
@@ -120,7 +121,10 @@ Placeholder tabs should show clear text that the feature is planned for a future
 | FR-004 | On selection, the car shall animate from roadway to an available charging slot. | Must | Visual path should be smooth and obvious |
 | FR-005 | The simulator shall start charging automatically when the car reaches the slot. | Must | Charging session enters active state |
 | FR-006 | The UI shall show battery percentage for charging vehicles and animate incrementing charge level. | Must | Numeric and visual fill indicator |
-| FR-007 | Charging duration shall be computed from battery delta, vehicle capacity, and slot charging power, but should complete in approximately 60 seconds at most. | Must | `durationSeconds = clamp(((batteryTargetPercent - batteryStartPercent) / 100 * estimatedCapacityKWh) / chargingPowerKw * 3600, 30, 90)`; expected default behavior remains near 60 seconds |
+| FR-007 | Charging duration shall be computed from each vehicle's current battery level at entry, its target battery level, and the charging power available in the bay. The duration shall vary by vehicle rather than using a fixed session length. | Must | Default demo tuning should use a bounded range, with a maximum session length of 45 seconds and a minimum session length that still preserves visible charge progression |
+| FR-007A | The simulation shall use a realistic starting-state distribution for incoming vehicles so they do not all appear fully depleted when entering the bay. | Should | Example default range: 20% to 75% initial battery, with varied target charge levels |
+| FR-007B | The simulation shall support demo-friendly tuning constants for bay count, maximum session time, charging power, and vehicle spawn cadence. | Should | Enables rapid iteration for stakeholder demos without changing core logic |
+| FR-020 | Vehicle graphics shall face the direction of travel for every lane, including left-to-right and right-to-left traffic. | Must | The visual orientation must match roadway motion, not remain fixed |
 | FR-008 | On completion, the charged car shall animate from slot back to roadway traffic. | Must | Reentry should not overlap with active bay occupancy |
 | FR-009 | The simulator shall compute and display total energy dispensed across all completed sessions. | Must | Counter should be persistent during page session |
 | FR-010 | The total energy counter shall update immediately after each session completes. | Must | Unit displayed in kWh |
@@ -133,6 +137,16 @@ Placeholder tabs should show clear text that the feature is planned for a future
 | FR-017 | Cars, Stations, Simulation, and Settings tabs shall be functional placeholders in MVP. | Must | Each tab must render placeholder text indicating future-stage implementation |
 | FR-018 | Charge-request input shall be idempotent per vehicle while the vehicle is not in roadway state. | Must | Multiple rapid clicks or key activations on the same car must result in at most one active assignment |
 | FR-019 | The simulator shall provide keyboard-operable selection of roadway cars. | Must | Cars are focusable, expose accessible labels, and support Enter/Space to request charging |
+
+## Demo-Tuning Notes Learned from the Current Iteration
+
+The first simulation pass highlighted three product lessons that should be captured in future requirements:
+
+* Charging duration should be variable by car, not a constant 20-second session, because the energy required depends on how full the vehicle already is when it enters the bay.
+* Initial battery state should be diverse at spawn time so the bays feel realistic and the queue behavior looks more natural during demos.
+* Vehicle graphics should always align with lane direction so the motion reads clearly for both left-to-right and right-to-left traffic.
+
+These observations should be treated as tuning guidance for the MVP demo experience, not as one-off fixes.
 
 ## Non-Functional Requirements
 
@@ -241,6 +255,9 @@ ROADWAY
 * AC-011: Given repeated rapid activation on the same roadway car, when activation occurs within 300 ms, then only one slot assignment is created.
 * AC-012: Given active entering, charging, and exiting cars, when reset is invoked, then all sessions and slot occupancy clear atomically within one simulation tick and no orphaned state remains.
 * AC-013: Given the user refreshes the page, when the simulator reinitializes, then total energy dispensed resets to zero for the new runtime session.
+* AC-014: Given cars entering the charging bays, when their current battery percentages differ, then their charging durations differ proportionally and no two vehicles are forced to the same fixed session length.
+* AC-015: Given the simulator is used in a demo setting, when the default tuning constants load, then the system uses a bounded, visually clear charging range (for example, a 45-second maximum) and a varied starting battery range for incoming vehicles.
+* AC-016: Given cars moving in any lane, when the animation renders, then the vehicle sprite faces the direction of travel for that lane.
 
 ## Testing Strategy
 
